@@ -11,7 +11,7 @@ from . import (
     get_client,
     get_tenant_user_id,
     get_new_bucket,
-    )
+)
 from .utils import _get_status, _get_status_and_error_code
 
 
@@ -103,7 +103,7 @@ def test_put_user_policy_invalid_element():
     # With no Statement
     policy_document = json.dumps(
         {
-            "Version": "2012-10-17",
+            "Version": "2012-10-17"
         }
     )
     e = assert_raises(ClientError, client.put_user_policy, PolicyDocument=policy_document,
@@ -704,7 +704,8 @@ def test_deny_tagging_actions_in_user_policy():
     obj_key = 'obj'
     s3_client.put_object(Bucket=bucket, Key=obj_key, Body='obj_body')
 
-    e = assert_raises(ClientError, s3_client.put_object_tagging, Bucket=bucket, Key=obj_key, Tagging=tags)
+    e = assert_raises(ClientError, s3_client.put_object_tagging, Bucket=bucket, Key=obj_key,
+                      Tagging=tags)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
     eq(error_code, 'AccessDenied')
@@ -716,3 +717,91 @@ def test_deny_tagging_actions_in_user_policy():
     s3_client.delete_object(Bucket=bucket, Key=obj_key)
     s3_client.delete_bucket(Bucket=bucket)
     client.delete_user_policy(PolicyName='DenyAccessPolicy', UserName=get_tenant_user_id())
+
+
+@attr(resource='user-policy')
+@attr(method='put')
+@attr(operation='Verify conflicting user policy statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+def test_verify_conflicting_user_policy_statements():
+    s3client = get_client()
+    bucket = get_new_bucket()
+    policy_document = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": [
+             {"Sid": "98AB54CG",
+              "Effect": "Allow",
+              "Action": "s3:ListBucket",
+              "Resource": f"arn:aws:s3:::{bucket}"},
+             {"Sid": "98AB54CA",
+              "Effect": "Deny",
+              "Action": "s3:ListBucket",
+              "Resource": f"arn:aws:s3:::{bucket}"}
+         ]}
+    )
+    client = get_tenant_iam_client()
+    client.put_user_policy(PolicyDocument=policy_document, PolicyName='DenyAccessPolicy',
+                           UserName=get_tenant_user_id())
+    e = assert_raises(ClientError, s3client.list_objects, Bucket=bucket)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    client.delete_user_policy(PolicyName='DenyAccessPolicy', UserName=get_tenant_user_id())
+
+
+@attr(resource='user-policy')
+@attr(method='put')
+@attr(operation='Verify conflicting user policies')
+@attr(assertion='succeeds')
+@attr('user-policy')
+def test_verify_conflicting_user_policies():
+    s3client = get_client()
+    bucket = get_new_bucket()
+    policy_allow = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {"Sid": "98AB54CG",
+                       "Effect": "Allow",
+                       "Action": "s3:ListBucket",
+                       "Resource": f"arn:aws:s3:::{bucket}"}}
+    )
+    policy_deny = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {"Sid": "98AB54CGZ",
+                       "Effect": "Deny",
+                       "Action": "s3:ListBucket",
+                       "Resource": f"arn:aws:s3:::{bucket}"}}
+    )
+    client = get_tenant_iam_client()
+    client.put_user_policy(PolicyDocument=policy_allow, PolicyName='AllowAccessPolicy',
+                           UserName=get_tenant_user_id())
+    client.put_user_policy(PolicyDocument=policy_deny, PolicyName='DenyAccessPolicy',
+                           UserName=get_tenant_user_id())
+    e = assert_raises(ClientError, s3client.list_objects, Bucket=bucket)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    client.delete_user_policy(PolicyName='AllowAccessPolicy', UserName=get_tenant_user_id())
+    client.delete_user_policy(PolicyName='DenyAccessPolicy', UserName=get_tenant_user_id())
+
+
+@attr(resource='user-policy')
+@attr(operation='Verify Allow Actions for IAM user policies')
+@attr(assertion='succeeds')
+@attr('user-policy')
+def test_verify_allow_iam_actions():
+    policy1 = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {"Sid": "98AB54CGA",
+                       "Effect": "Allow",
+                       "Action": ["iam:PutUserPolicy", "iam:GetUserPolicy",
+                                  "iam:ListUserPolicies", "iam:DeleteUserPolicy"],
+                       "Resource": f"arn:aws:iam:::user/{get_tenant_user_id()}"}}
+    )
+    client1 = get_tenant_iam_client()
+
+    client1.put_user_policy(PolicyDocument=policy1, PolicyName='AllowAccessPolicy',
+                            UserName=get_tenant_user_id())
+    client1.get_user_policy(PolicyName='AllowAccessPolicy', UserName=get_tenant_user_id())
+    client1.list_user_policies(UserName=get_tenant_user_id())
+    client1.delete_user_policy(PolicyName='AllowAccessPolicy', UserName=get_tenant_user_id())
