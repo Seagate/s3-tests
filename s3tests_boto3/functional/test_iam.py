@@ -1,12 +1,19 @@
 import json
+from nose.tools import eq_ as eq
 
 from botocore.exceptions import ClientError
 from nose.plugins.attrib import attr
-from nose.tools import eq_ as eq
 
 from s3tests.functional.utils import assert_raises
-from . import get_tenant_iam_client, get_tenant_user_id
+from . import (
+    get_tenant_iam_client,
+    get_client,
+    get_tenant_user_id,
+    get_new_bucket,
+    get_new_bucket_resource,
+    )
 from .utils import _get_status
+from .utils import _get_status_and_error_code
 
 
 @attr(resource='user-policy')
@@ -413,3 +420,148 @@ def test_delete_user_policy_from_multiple_policies():
     client.delete_user_policy(PolicyName='AllowAccessPolicy2', UserName=get_tenant_user_id())
     client.get_user_policy(PolicyName='AllowAccessPolicy3', UserName=get_tenant_user_id())
     client.delete_user_policy(PolicyName='AllowAccessPolicy3', UserName=get_tenant_user_id())
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions in user Policy')
+@attr(assertion='succeeds')
+@attr('user-policy')
+def test_allow_bucket_actions_in_user_policy():
+    client = get_tenant_iam_client()
+    bucket = get_new_bucket()
+    bucket_listed = False
+
+    policy_document_allow = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": ["s3:ListAllMyBuckets", "s3:DeleteBucket"],
+             "Resource": "arn:aws:s3:::*"}}
+    )
+    client.put_user_policy(PolicyDocument=policy_document_allow, PolicyName='AllowAccessPolicy',
+                           UserName=get_tenant_user_id())
+    s3_client = get_client()
+    response = s3_client.list_buckets()
+    for index in range(len(response['Buckets'])):
+        if bucket == response['Buckets'][index]['Name']:
+            bucket_listed = True
+            break
+        else:
+            continue
+    if not bucket_listed:
+        raise AssertionError("bucket is not listed")
+
+    s3_client.delete_bucket(Bucket=bucket)
+    response = s3_client.list_buckets()
+    bucket_listed = False
+    for index in range(len(response['Buckets'])):
+        if bucket == response['Buckets'][index]['Name']:
+            bucket_listed = True
+            break
+        else:
+            continue
+    if bucket_listed:
+        raise AssertionError("deleted bucket is getting listed")
+    client.delete_user_policy(PolicyName='AllowAccessPolicy', UserName=get_tenant_user_id())
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions in user Policy')
+@attr(assertion='succeeds')
+@attr('user-policy')
+def test_deny_bucket_actions_in_user_policy():
+    client = get_tenant_iam_client()
+    bucket = get_new_bucket()
+    policy_document_allow = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": ["s3:ListAllMyBuckets", "s3:DeleteBucket"],
+             "Resource": "arn:aws:s3:::*"}}
+    )
+
+    client.put_user_policy(PolicyDocument=policy_document_allow, PolicyName='DenyAccessPolicy',
+                           UserName=get_tenant_user_id())
+    s3_client = get_client()
+
+    e = assert_raises(ClientError, s3_client.list_buckets, Bucket=bucket)
+    status = _get_status(e.response)
+    eq(status, 403)
+    e = assert_raises(ClientError, s3_client.delete_bucket, Bucket=bucket)
+    status = _get_status(e.response)
+    eq(status, 403)
+    client.delete_user_policy(PolicyName='DenyAccessPolicy', UserName=get_tenant_user_id())
+    s3_client.delete_bucket(Bucket=bucket)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Object Actions in user Policy')
+@attr(assertion='succeeds')
+@attr('user-policy')
+def test_allow_object_actions_in_user_policy():
+    client = get_tenant_iam_client()
+    bucket = get_new_bucket()
+
+    policy_document_allow = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+             "Resource": f"arn:aws:s3:::{bucket}/*"}}
+    )
+    client.put_user_policy(PolicyDocument=policy_document_allow, PolicyName='AllowAccessPolicy',
+                           UserName=get_tenant_user_id())
+
+    s3_client = get_client()
+    s3_client.put_object(Bucket=bucket, Key='foo', Body='bar')
+    response = s3_client.get_object(Bucket=bucket, Key='foo')
+    body = response['Body'].read()
+    if type(body) is bytes:
+        body = body.decode()
+        print("decode")
+    eq(body, "bar")
+    s3_client.delete_object(Bucket=bucket, Key='foo')
+    e = assert_raises(ClientError, s3_client.get_object, Bucket=bucket, Key='foo')
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 404)
+    eq(error_code, 'NoSuchKey')
+
+    s3_client.delete_bucket(Bucket=bucket)
+    client.delete_user_policy(PolicyName='AllowAccessPolicy', UserName=get_tenant_user_id())
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Object Actions in user Policy')
+@attr(assertion='succeeds')
+@attr('user-policy')
+def test_deny_object_actions_in_user_policy():
+    client = get_tenant_iam_client()
+    bucket = get_new_bucket()
+
+    policy_document_allow = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+             "Resource": f"arn:aws:s3:::{bucket}/*"}}
+    )
+    client.put_user_policy(PolicyDocument=policy_document_allow, PolicyName='AllowAccessPolicy',
+                           UserName=get_tenant_user_id())
+
+    s3_client = get_client()
+    e = assert_raises(ClientError, s3_client.put_object, Bucket=bucket, Key='foo')
+    status = _get_status(e.response)
+    eq(status, 403)
+    e = assert_raises(ClientError, s3_client.get_object, Bucket=bucket, Key='foo')
+    status = _get_status(e.response)
+    eq(status, 403)
+    e = assert_raises(ClientError, s3_client.delete_object, Bucket=bucket, Key='foo')
+    status = _get_status(e.response)
+    eq(status, 403)
+
+    s3_client.delete_bucket(Bucket=bucket)
+    client.delete_user_policy(PolicyName='AllowAccessPolicy', UserName=get_tenant_user_id())
