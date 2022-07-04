@@ -1,4 +1,5 @@
 import json
+import datetime
 
 from botocore.exceptions import ClientError
 from nose.plugins.attrib import attr
@@ -15,6 +16,13 @@ from . import (
     get_alt_user_id,
 )
 from .utils import _get_status, _get_status_and_error_code
+
+
+def _delete_all_objects(s3client, bucket_name):
+    response = s3client.list_objects(Bucket=bucket_name)
+    for object_received in response['Contents']:
+        response = s3client.delete_object(Bucket=bucket_name, Key=object_received['Key'])
+        eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
 
 
 @attr(resource='user-policy')
@@ -954,10 +962,632 @@ def test_verify_allow_iam_actions():
                                        UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     response = iam_client_alt.get_user_policy(PolicyName='AllowAccessPolicy',
-                                       UserName=get_alt_user_id())
+                                              UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     response = iam_client_alt.list_user_policies(UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     response = iam_client_alt.delete_user_policy(PolicyName='AllowAccessPolicy',
-                                          UserName=get_alt_user_id())
+                                                 UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions with CurrentTime condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_current_time_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    current_time = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    allow_current_time_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": "s3:ListBucket",
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"DateGreaterThanEquals": {"aws:CurrentTime": current_time}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=allow_current_time_policy,
+                           PolicyName='AllowAccessPolicy', UserName=get_alt_user_id())
+    response = s3_client_alt.list_objects(Bucket=bucket)
+
+    object_found = False
+    for object_received in response['Contents']:
+        if "foo" == object_received['Key']:
+            object_found = True
+            break
+    if not object_found:
+        raise AssertionError("Object is not listed")
+
+    _delete_all_objects(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_user_policy(PolicyName='AllowAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions with CurrentTime condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_deny_current_time_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_alt)
+    response = s3_client_alt.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    current_time = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    deny_current_time_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": "s3:ListBucket",
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"DateGreaterThanEquals": {"aws:CurrentTime": current_time}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=deny_current_time_policy, PolicyName='DenyAccessPolicy',
+                           UserName=get_alt_user_id())
+
+    e = assert_raises(ClientError, s3_client_alt.list_objects, Bucket=bucket)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = client.delete_user_policy(PolicyName='DenyAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    _delete_all_objects(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions with username condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_username_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    allow_username_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": ["s3:ListBucket"],
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"aws:username": get_alt_user_id()}}
+         }
+         }
+    )
+    client.put_user_policy(PolicyDocument=allow_username_policy, PolicyName='AllowAccessPolicy',
+                           UserName=get_alt_user_id())
+    response = s3_client_alt.list_objects(Bucket=bucket)
+
+    object_found = False
+    for object_received in response['Contents']:
+        if "foo" == object_received['Key']:
+            object_found = True
+            break
+    if not object_found:
+        raise AssertionError("Object is not listed")
+
+    _delete_all_objects(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_user_policy(PolicyName='AllowAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions with username condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_deny_username_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_alt)
+    response = s3_client_alt.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    deny_username_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": ["s3:ListBucket"],
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"aws:username": get_alt_user_id()}}
+         }
+         }
+    )
+    client.put_user_policy(PolicyDocument=deny_username_policy, PolicyName='DenyAccessPolicy',
+                           UserName=get_alt_user_id())
+    e = assert_raises(ClientError, s3_client_alt.list_objects, Bucket=bucket)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = client.delete_user_policy(PolicyName='DenyAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    _delete_all_objects(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions with s3:prefix condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_s3prefix_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.put_object(Bucket=bucket, Key='object_prefix', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    allow_prefix_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": ["s3:ListBucket"],
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"s3:prefix": "object"}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=allow_prefix_policy, PolicyName='AllowAccessPolicy',
+                           UserName=get_alt_user_id())
+    response = s3_client_alt.list_objects(Bucket=bucket, Prefix="object")
+
+    object_found = False
+    for object_received in response['Contents']:
+        if "object_prefix" == object_received['Key']:
+            object_found = True
+            break
+    if not object_found:
+        raise AssertionError("Object with prefix \"object\" is not listed")
+
+    for object_received in response['Contents']:
+        if "foo" == object_received['Key']:
+            raise AssertionError("Object without prefix \"object\" is listed")
+
+    _delete_all_objects(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_user_policy(PolicyName='AllowAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions with s3:prefix condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_deny_s3prefix_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_alt)
+    response = s3_client_alt.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.put_object(Bucket=bucket, Key='object_prefix', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    deny_prefix_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": ["s3:ListBucket"],
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringNotEquals": {"s3:prefix": "object"}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=deny_prefix_policy, PolicyName='DenyAccessPolicy',
+                           UserName=get_alt_user_id())
+    response = s3_client_alt.list_objects(Bucket=bucket, Prefix="object")
+
+    object_found = False
+    for object_received in response['Contents']:
+        if "object_prefix" == object_received['Key']:
+            object_found = True
+            break
+    if not object_found:
+        raise AssertionError("Object with prefix \"object\" is not listed")
+
+    for object_received in response['Contents']:
+        if "foo" == object_received['Key']:
+            raise AssertionError("Object without prefix \"object\" is listed")
+
+    response = client.delete_user_policy(PolicyName='DenyAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    _delete_all_objects(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions with PrincipalType condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_principal_type_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    allow_principal_type_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": "s3:ListBucket",
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"aws:PrincipalType": "User"}}
+         }
+         }
+    )
+    client.put_user_policy(PolicyDocument=allow_principal_type_policy,
+                           PolicyName='AllowAccessPolicy', UserName=get_alt_user_id())
+    response = s3_client_alt.list_objects(Bucket=bucket)
+
+    object_found = False
+    for object_received in response['Contents']:
+        if "foo" == object_received['Key']:
+            object_found = True
+            break
+    if not object_found:
+        raise AssertionError("Object is not listed")
+
+    response = client.delete_user_policy(PolicyName='AllowAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    _delete_all_objects(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions with PrincipalType condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_deny_principal_type_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_alt)
+    response = s3_client_alt.put_object(Bucket=bucket, Key='foo', Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    deny_principal_type_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": "s3:ListBucket",
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"aws:PrincipalType": "User"}}
+         }
+         }
+    )
+    client.put_user_policy(PolicyDocument=deny_principal_type_policy,
+                           PolicyName='DenyAccessPolicy', UserName=get_alt_user_id())
+    e = assert_raises(ClientError, s3_client_alt.list_objects, Bucket=bucket)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = client.delete_user_policy(PolicyName='DenyAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    _delete_all_objects(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions with max-keys condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_max_keys_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_iam)
+    s3_client_iam.put_object(Bucket=bucket, Key='foo', Body='bar')
+    s3_client_iam.put_object(Bucket=bucket, Key='foo1', Body='bar')
+    s3_client_iam.put_object(Bucket=bucket, Key='foo2', Body='bar')
+    s3_client_iam.put_object(Bucket=bucket, Key='foo3', Body='bar')
+
+    allow_max_keys_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": "s3:ListBucket",
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"NumericGreaterThanEquals": {"s3:max-keys": "3"},
+                           "NumericLessThan": {"s3:max-keys": "5"}}
+         }
+         }
+    )
+    client.put_user_policy(PolicyDocument=allow_max_keys_policy, PolicyName='AllowAccessPolicy',
+                           UserName=get_alt_user_id())
+
+    e = assert_raises(ClientError, s3_client_alt.list_objects, Bucket=bucket, MaxKeys=2)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = s3_client_alt.list_objects(Bucket=bucket, MaxKeys=3)
+    if len(response['Contents']) != 3:
+        raise AssertionError("Number of objects listed are not same as MaxKeys:3")
+
+    response = s3_client_alt.list_objects(Bucket=bucket, MaxKeys=4)
+    if len(response['Contents']) != 4:
+        raise AssertionError("Number of objects listed are not same as MaxKeys:4")
+
+    e = assert_raises(ClientError, s3_client_alt.list_objects, Bucket=bucket, MaxKeys=5)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    _delete_all_objects(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_user_policy(PolicyName='AllowAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions with max-keys condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_deny_max_keys_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_alt)
+    s3_client_alt.put_object(Bucket=bucket, Key='foo', Body='bar')
+    s3_client_alt.put_object(Bucket=bucket, Key='foo1', Body='bar')
+    s3_client_alt.put_object(Bucket=bucket, Key='foo2', Body='bar')
+
+    deny_max_keys_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": "s3:ListBucket",
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"NumericGreaterThan": {"s3:max-keys": "2"}}
+         }
+         }
+    )
+    client.put_user_policy(PolicyDocument=deny_max_keys_policy, PolicyName='DenyAccessPolicy',
+                           UserName=get_alt_user_id())
+    e = assert_raises(ClientError, s3_client_alt.list_objects, Bucket=bucket, MaxKeys=3)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = s3_client_alt.list_objects(Bucket=bucket, MaxKeys=1)
+    if len(response['Contents']) != 1:
+        raise AssertionError("Number of objects listed are not same as MaxKeys:1")
+
+    response = client.delete_user_policy(PolicyName='DenyAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    _delete_all_objects(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions with delimiter condition statement')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_delimiter_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_iam)
+    s3_client_iam.put_object(Bucket=bucket, Key='test/foo1', Body='bar')
+    s3_client_iam.put_object(Bucket=bucket, Key='test/secondary/foo2', Body='bar')
+
+    allow_delimiter_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": ["s3:ListBucket"],
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"s3:delimiter": "secondary"}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=allow_delimiter_policy, PolicyName='AllowAccessPolicy',
+                           UserName=get_alt_user_id())
+    response = s3_client_alt.list_objects(Bucket=bucket, Delimiter="secondary")
+
+    object_found = False
+    for object_received in response['Contents']:
+        if "test/foo1" == object_received['Key']:
+            object_found = True
+            break
+    if not object_found:
+        raise AssertionError("Object without \"secondary\" in key is not listed")
+
+    for object_received in response['Contents']:
+        if "secondary" in object_received['Key']:
+            raise AssertionError("Object with \"secondary\" in key is listed")
+
+    _delete_all_objects(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_user_policy(PolicyName='AllowAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions with delimiter condition statement')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_deny_delimiter_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_alt)
+    s3_client_alt.put_object(Bucket=bucket, Key='test/foo1', Body='bar')
+    s3_client_alt.put_object(Bucket=bucket, Key='test/secondary/foo2', Body='bar')
+
+    deny_delimiter_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": ["s3:ListBucket"],
+             "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"s3:delimiter": "secondary"}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=deny_delimiter_policy, PolicyName='DenyAccessPolicy',
+                           UserName=get_alt_user_id())
+    e = assert_raises(ClientError, s3_client_alt.list_objects, Bucket=bucket,
+                      Delimiter="secondary")
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = client.delete_user_policy(PolicyName='DenyAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    _delete_all_objects(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Allow Bucket Actions with VersionId condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_version_id_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_iam)
+    s3_client_iam.put_bucket_versioning(Bucket=bucket,
+                                        VersioningConfiguration={"Status": "Enabled"})
+    s3_client_iam.put_object(Bucket=bucket, Key='foo', Body='bar')
+    response = s3_client_iam.list_object_versions(Bucket=bucket, Prefix='foo')
+    version_id = response['Versions'][0]['VersionId']
+
+    allow_version_id_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+             "Resource": f"arn:aws:s3:::{bucket}/foo",
+             "Condition": {"StringEquals": {"s3:VersionId": version_id}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=allow_version_id_policy, PolicyName='AllowAccessPolicy',
+                           UserName=get_alt_user_id())
+    response = s3_client_alt.get_object(Bucket=bucket, Key='foo', VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    response = s3_client_iam.delete_object(Bucket=bucket, Key='foo', VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_user_policy(PolicyName='AllowAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Verify Deny Bucket Actions with VersionId condition statements')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_deny_version_id_condition_in_user_policy():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    bucket = get_new_bucket(client=s3_client_alt)
+    s3_client_alt.put_bucket_versioning(Bucket=bucket,
+                                        VersioningConfiguration={"Status": "Enabled"})
+    s3_client_alt.put_object(Bucket=bucket, Key='foo', Body='bar')
+    response = s3_client_alt.list_object_versions(Bucket=bucket, Prefix='foo')
+    version_id = response['Versions'][0]['VersionId']
+
+    deny_version_id_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Deny",
+             "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+             "Resource": f"arn:aws:s3:::{bucket}/foo",
+             "Condition": {"StringEquals": {"s3:VersionId": version_id}}
+                        }
+         }
+    )
+    client.put_user_policy(PolicyDocument=deny_version_id_policy, PolicyName='DenyAccessPolicy',
+                           UserName=get_alt_user_id())
+
+    e = assert_raises(ClientError, s3_client_alt.get_object, Bucket=bucket, Key='foo',
+                      VersionId=version_id)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = client.delete_user_policy(PolicyName='DenyAccessPolicy',
+                                         UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.delete_object(Bucket=bucket, Key='foo', VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
