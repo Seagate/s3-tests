@@ -558,6 +558,7 @@ def test_allow_bucket_actions_in_user_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
+@attr('fails_on_dbstore')
 def test_deny_bucket_actions_in_user_policy():
     client = get_iam_client()
     s3_client = get_alt_client()
@@ -640,6 +641,7 @@ def test_allow_object_actions_in_user_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
+@attr('fails_on_dbstore')
 def test_deny_object_actions_in_user_policy():
     client = get_iam_client()
     s3_client_alt = get_alt_client()
@@ -722,6 +724,7 @@ def test_allow_multipart_actions_in_user_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
+@attr('fails_on_dbstore')
 def test_deny_multipart_actions_in_user_policy():
     client = get_iam_client()
     s3_client = get_alt_client()
@@ -768,6 +771,7 @@ def test_deny_multipart_actions_in_user_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
+@attr('fails_on_dbstore')
 def test_allow_tagging_actions_in_user_policy():
     client = get_iam_client()
     s3_client_alt = get_alt_client()
@@ -817,6 +821,7 @@ def test_allow_tagging_actions_in_user_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
+@attr('fails_on_dbstore')
 def test_deny_tagging_actions_in_user_policy():
     client = get_iam_client()
     s3_client = get_alt_client()
@@ -872,6 +877,7 @@ def test_deny_tagging_actions_in_user_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
+@attr('fails_on_dbstore')
 def test_verify_conflicting_user_policy_statements():
     s3client = get_alt_client()
     bucket = get_new_bucket(client=s3client)
@@ -907,6 +913,7 @@ def test_verify_conflicting_user_policy_statements():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
+@attr('fails_on_dbstore')
 def test_verify_conflicting_user_policies():
     s3client = get_alt_client()
     bucket = get_new_bucket(client=s3client)

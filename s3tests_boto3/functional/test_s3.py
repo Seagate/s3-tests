@@ -4183,18 +4183,6 @@ def check_invalid_bucketname(invalid_name):
 
 @attr(resource='bucket')
 @attr(method='put')
-@attr(operation='empty name')
-@attr(assertion='fails 405')
-# TODO: remove this fails_on_rgw when I fix it
-@attr('fails_on_rgw')
-def test_bucket_create_naming_bad_short_empty():
-    invalid_bucketname = ''
-    status, error_code = check_invalid_bucketname(invalid_bucketname)
-    eq(status, 405)
-    eq(error_code, 'MethodNotAllowed')
-
-@attr(resource='bucket')
-@attr(method='put')
 @attr(operation='short (one character) name')
 @attr(assertion='fails 400')
 def test_bucket_create_naming_bad_short_one():
@@ -4206,27 +4194,6 @@ def test_bucket_create_naming_bad_short_one():
 @attr(assertion='fails 400')
 def test_bucket_create_naming_bad_short_two():
     check_bad_bucket_name('aa')
-
-# Breaks DNS with SubdomainCallingFormat
-@attr('fails_with_subdomain')
-@attr(resource='bucket')
-@attr(method='put')
-@attr(operation='excessively long names')
-@attr(assertion='fails with subdomain: 400')
-# TODO: remove this fails_on_rgw when I fix it
-@attr('fails_on_rgw')
-def test_bucket_create_naming_bad_long():
-    invalid_bucketname = 256*'a'
-    status, error_code = check_invalid_bucketname(invalid_bucketname)
-    eq(status, 400)
-
-    invalid_bucketname = 280*'a'
-    status, error_code = check_invalid_bucketname(invalid_bucketname)
-    eq(status, 400)
-
-    invalid_bucketname = 3000*'a'
-    status, error_code = check_invalid_bucketname(invalid_bucketname)
-    eq(status, 400)
 
 def check_good_bucket_name(name, _prefix=None):
     """
@@ -4349,22 +4316,6 @@ def test_bucket_list_long_name():
 @attr(assertion='fails on aws')
 def test_bucket_create_naming_bad_ip():
     check_bad_bucket_name('192.168.5.123')
-
-# Breaks DNS with SubdomainCallingFormat
-@attr('fails_with_subdomain')
-@attr(resource='bucket')
-@attr(method='put')
-@attr(operation='create w/! in name')
-@attr(assertion='fails with subdomain')
-# TODO: remove this fails_on_rgw when I fix it
-@attr('fails_on_rgw')
-def test_bucket_create_naming_bad_punctuation():
-    # characters other than [a-zA-Z0-9._-]
-    invalid_bucketname = 'alpha!soup'
-    status, error_code = check_invalid_bucketname(invalid_bucketname)
-    # TODO: figure out why a 403 is coming out in boto3 but not in boto2.
-    eq(status, 400)
-    eq(error_code, 'InvalidBucketName')
 
 # test_bucket_create_naming_dns_* are valid but not recommended
 @attr(resource='bucket')
@@ -5558,6 +5509,7 @@ def _get_acl_header(user_id=None, perms=None):
 @attr(assertion='adds all grants individually to second user')
 @attr('fails_on_dho')
 @attr('fails_on_aws') #  <Error><Code>InvalidArgument</Code><Message>Invalid id</Message><ArgumentName>CanonicalUser/ID</ArgumentName><ArgumentValue>${ALTUSER}</ArgumentValue>
+@attr('fails_on_dbstore')
 def test_object_header_acl_grants():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -5630,6 +5582,7 @@ def test_object_header_acl_grants():
 @attr(assertion='adds all grants individually to second user')
 @attr('fails_on_dho')
 @attr('fails_on_aws') #  <Error><Code>InvalidArgument</Code><Message>Invalid id</Message><ArgumentName>CanonicalUser/ID</ArgumentName><ArgumentValue>${ALTUSER}</ArgumentValue>
+@attr('fails_on_dbstore')
 def test_bucket_header_acl_grants():
     headers = _get_acl_header()
     bucket_name = get_new_bucket_name()
@@ -7797,7 +7750,7 @@ def test_set_bucket_tagging():
     e = assert_raises(ClientError, client.get_bucket_tagging, Bucket=bucket_name)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 404)
-    eq(error_code, 'NoSuchTagSetError')
+    eq(error_code, 'NoSuchTagSet')
 
     client.put_bucket_tagging(Bucket=bucket_name, Tagging=tags)
 
@@ -7806,11 +7759,13 @@ def test_set_bucket_tagging():
     eq(response['TagSet'][0]['Key'], 'Hello')
     eq(response['TagSet'][0]['Value'], 'World')
 
-    client.delete_bucket_tagging(Bucket=bucket_name)
+    response = client.delete_bucket_tagging(Bucket=bucket_name)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
     e = assert_raises(ClientError, client.get_bucket_tagging, Bucket=bucket_name)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 404)
-    eq(error_code, 'NoSuchTagSetError')
+    eq(error_code, 'NoSuchTagSet')
 
 
 class FakeFile(object):
@@ -10405,7 +10360,7 @@ def test_lifecycle_cloud_transition():
     lc_interval = get_lc_debug_interval()
 
     # Wait for first expiration (plus fudge to handle the timer window)
-    time.sleep(3*lc_interval)
+    time.sleep(8*lc_interval)
     expire1_keys = list_bucket_storage_class(client, bucket_name)
     eq(len(expire1_keys['STANDARD']), 2)
 
@@ -10422,7 +10377,7 @@ def test_lifecycle_cloud_transition():
 
     cloud_client = get_cloud_client()
 
-    time.sleep(10*lc_interval)
+    time.sleep(12*lc_interval)
     expire1_key1_str = prefix + keys[0]
     verify_object(cloud_client, target_path, expire1_key1_str, keys[0], target_sc)
 
@@ -10499,14 +10454,14 @@ def test_lifecycle_cloud_multiple_transition():
     lc_interval = get_lc_debug_interval()
 
     # Wait for first expiration (plus fudge to handle the timer window)
-    time.sleep(3*lc_interval)
+    time.sleep(4*lc_interval)
     expire1_keys = list_bucket_storage_class(client, bucket_name)
     eq(len(expire1_keys['STANDARD']), 2)
     eq(len(expire1_keys[sc[1]]), 2)
     eq(len(expire1_keys[sc[2]]), 0)
 
     # Wait for next expiration cycle
-    time.sleep(4*lc_interval)
+    time.sleep(7*lc_interval)
     expire1_keys = list_bucket_storage_class(client, bucket_name)
     eq(len(expire1_keys['STANDARD']), 2)
     eq(len(expire1_keys[sc[1]]), 0)
@@ -10517,7 +10472,7 @@ def test_lifecycle_cloud_multiple_transition():
         eq(len(expire1_keys[sc[2]]), 0)
 
     # Wait for final expiration cycle
-    time.sleep(4*lc_interval)
+    time.sleep(12*lc_interval)
     expire3_keys = list_bucket_storage_class(client, bucket_name)
     eq(len(expire3_keys['STANDARD']), 2)
     eq(len(expire3_keys[sc[1]]), 0)
@@ -10585,13 +10540,13 @@ def test_lifecycle_noncur_cloud_transition():
 
     lc_interval = get_lc_debug_interval()
 
-    time.sleep(3*lc_interval)
+    time.sleep(4*lc_interval)
     expire1_keys = list_bucket_storage_class(client, bucket)
     eq(len(expire1_keys['STANDARD']), 2)
     eq(len(expire1_keys[sc[1]]), 4)
     eq(len(expire1_keys[sc[2]]), 0)
 
-    time.sleep(5*lc_interval)
+    time.sleep(10*lc_interval)
     expire1_keys = list_bucket_storage_class(client, bucket)
     eq(len(expire1_keys['STANDARD']), 2)
     eq(len(expire1_keys[sc[1]]), 0)
@@ -10652,7 +10607,7 @@ def test_lifecycle_cloud_transition_large_obj():
     lc_interval = get_lc_debug_interval()
 
     # Wait for first expiration (plus fudge to handle the timer window)
-    time.sleep(3*lc_interval)
+    time.sleep(8*lc_interval)
     expire1_keys = list_bucket_storage_class(client, bucket)
     eq(len(expire1_keys['STANDARD']), 1)
 
@@ -10668,7 +10623,7 @@ def test_lifecycle_cloud_transition_large_obj():
     prefix = bucket + "/"
 
     # multipart upload takes time
-    time.sleep(3*lc_interval)
+    time.sleep(12*lc_interval)
     cloud_client = get_cloud_client()
 
     expire1_key1_str = prefix + keys[1]
@@ -10745,6 +10700,7 @@ def test_encryption_sse_c_method_head():
 @attr(operation='write encrypted with SSE-C and read without SSE-C')
 @attr(assertion='operation fails')
 @attr('encryption')
+@attr('fails_on_dbstore')
 def test_encryption_sse_c_present():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -10769,6 +10725,7 @@ def test_encryption_sse_c_present():
 @attr(operation='write encrypted with SSE-C but read with other key')
 @attr(assertion='operation fails')
 @attr('encryption')
+@attr('fails_on_dbstore')
 def test_encryption_sse_c_other_key():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -10800,6 +10757,7 @@ def test_encryption_sse_c_other_key():
 @attr(operation='write encrypted with SSE-C, but md5 is bad')
 @attr(assertion='operation fails')
 @attr('encryption')
+@attr('fails_on_dbstore')
 def test_encryption_sse_c_invalid_md5():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -10822,6 +10780,7 @@ def test_encryption_sse_c_invalid_md5():
 @attr(operation='write encrypted with SSE-C, but dont provide MD5')
 @attr(assertion='operation fails')
 @attr('encryption')
+@attr('fails_on_dbstore')
 def test_encryption_sse_c_no_md5():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -10841,6 +10800,7 @@ def test_encryption_sse_c_no_md5():
 @attr(operation='declare SSE-C but do not provide key')
 @attr(assertion='operation fails')
 @attr('encryption')
+@attr('fails_on_dbstore')
 def test_encryption_sse_c_no_key():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -10859,6 +10819,7 @@ def test_encryption_sse_c_no_key():
 @attr(operation='Do not declare SSE-C but provide key and MD5')
 @attr(assertion='operation successfull, no encryption')
 @attr('encryption')
+@attr('fails_on_dbstore')
 def test_encryption_key_no_sse_c():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -12944,6 +12905,7 @@ def test_put_obj_enc_conflict_bad_enc_kms():
 @attr('encryption')
 @attr('bucket-policy')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_bucket_policy_put_obj_s3_noenc():
     bucket_name = get_new_bucket()
     client = get_v2_client()
@@ -13001,6 +12963,7 @@ def test_bucket_policy_put_obj_s3_noenc():
 @attr('encryption')
 @attr('bucket-policy')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_bucket_policy_put_obj_s3_kms():
     kms_keyid = get_main_kms_keyid()
     if kms_keyid is None:
@@ -13049,6 +13012,7 @@ def test_bucket_policy_put_obj_s3_kms():
 @attr(operation='Deny put obj requests if not sse-kms: without encryption')
 @attr(assertion='success')
 @attr('encryption')
+@attr('fails_on_dbstore')
 @attr('bucket-policy')
 def test_bucket_policy_put_obj_kms_noenc():
     kms_keyid = get_main_kms_keyid()
@@ -13100,6 +13064,7 @@ def test_bucket_policy_put_obj_kms_noenc():
 @attr(assertion='success')
 @attr('encryption')
 @attr('bucket-policy')
+@attr('fails_on_dbstore')
 def test_bucket_policy_put_obj_kms_s3():
     bucket_name = get_new_bucket()
     client = get_v2_client()
@@ -13749,6 +13714,35 @@ def test_object_lock_delete_object_with_retention():
     response = client.delete_object(Bucket=bucket_name, Key=key, VersionId=response['VersionId'], BypassGovernanceRetention=True)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
 
+@attr(resource='bucket')
+@attr(method='delete')
+@attr(operation='Test delete object with retention and delete marker')
+@attr(assertion='retention period make effects')
+@attr('object-lock')
+@attr('fails_on_dbstore')
+def test_object_lock_delete_object_with_retention_and_marker():
+    bucket_name = get_new_bucket_name()
+    client = get_client()
+    client.create_bucket(Bucket=bucket_name, ObjectLockEnabledForBucket=True)
+    key = 'file1'
+
+    response = client.put_object(Bucket=bucket_name, Body='abc', Key=key)
+    retention = {'Mode':'GOVERNANCE', 'RetainUntilDate':datetime.datetime(2030,1,1,tzinfo=pytz.UTC)}
+    client.put_object_retention(Bucket=bucket_name, Key=key, Retention=retention)
+    del_response = client.delete_object(Bucket=bucket_name, Key=key)
+    e = assert_raises(ClientError, client.delete_object, Bucket=bucket_name, Key=key, VersionId=response['VersionId'])
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    client.delete_object(Bucket=bucket_name, Key=key, VersionId=del_response['VersionId'])
+    e = assert_raises(ClientError, client.delete_object, Bucket=bucket_name, Key=key, VersionId=response['VersionId'])
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = client.delete_object(Bucket=bucket_name, Key=key, VersionId=response['VersionId'], BypassGovernanceRetention=True)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
 
 @attr(resource='object')
 @attr(method='delete')
@@ -14686,6 +14680,7 @@ def _test_sse_s3_default_upload(file_size):
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_default_upload_1b():
     _test_sse_s3_default_upload(1)
 
@@ -14696,6 +14691,7 @@ def test_sse_s3_default_upload_1b():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_default_upload_1kb():
     _test_sse_s3_default_upload(1024)
 
@@ -14706,6 +14702,7 @@ def test_sse_s3_default_upload_1kb():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_default_upload_1mb():
     _test_sse_s3_default_upload(1024*1024)
 
@@ -14716,6 +14713,7 @@ def test_sse_s3_default_upload_1mb():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_default_upload_8mb():
     _test_sse_s3_default_upload(8*1024*1024)
 
@@ -14750,6 +14748,7 @@ def _test_sse_kms_default_upload(file_size):
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_kms_default_upload_1b():
     _test_sse_kms_default_upload(1)
 
@@ -14760,6 +14759,7 @@ def test_sse_kms_default_upload_1b():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_kms_default_upload_1kb():
     _test_sse_kms_default_upload(1024)
 
@@ -14770,6 +14770,7 @@ def test_sse_kms_default_upload_1kb():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_kms_default_upload_1mb():
     _test_sse_kms_default_upload(1024*1024)
 
@@ -14780,6 +14781,7 @@ def test_sse_kms_default_upload_1mb():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_kms_default_upload_8mb():
     _test_sse_kms_default_upload(8*1024*1024)
 
@@ -14792,6 +14794,7 @@ def test_sse_kms_default_upload_8mb():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_default_method_head():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -14820,6 +14823,7 @@ def test_sse_s3_default_method_head():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_default_multipart_upload():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -14870,6 +14874,7 @@ def test_sse_s3_default_multipart_upload():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_default_post_object_authenticated_request():
     bucket_name = get_new_bucket()
     client = get_client()
@@ -14919,6 +14924,7 @@ def test_sse_s3_default_post_object_authenticated_request():
 @attr('encryption')
 @attr('bucket-encryption')
 @attr('encryption')
+@attr('fails_on_dbstore')
 def test_sse_kms_default_post_object_authenticated_request():
     kms_keyid = get_main_kms_keyid()
     if kms_keyid is None:
@@ -14988,6 +14994,7 @@ def _test_sse_s3_encrypted_upload(file_size):
 @attr(assertion='success')
 @attr('encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_encrypted_upload_1b():
     _test_sse_s3_encrypted_upload(1)
 
@@ -14997,6 +15004,7 @@ def test_sse_s3_encrypted_upload_1b():
 @attr(assertion='success')
 @attr('encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_encrypted_upload_1kb():
     _test_sse_s3_encrypted_upload(1024)
 
@@ -15006,6 +15014,7 @@ def test_sse_s3_encrypted_upload_1kb():
 @attr(assertion='success')
 @attr('encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_encrypted_upload_1mb():
     _test_sse_s3_encrypted_upload(1024*1024)
 
@@ -15015,5 +15024,6 @@ def test_sse_s3_encrypted_upload_1mb():
 @attr(assertion='success')
 @attr('encryption')
 @attr('sse-s3')
+@attr('fails_on_dbstore')
 def test_sse_s3_encrypted_upload_8mb():
     _test_sse_s3_encrypted_upload(8*1024*1024)
