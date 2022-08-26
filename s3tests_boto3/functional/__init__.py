@@ -719,6 +719,3 @@ def get_cloud_target_storage_class():
 
 def get_lc_debug_interval():
     return config.lc_debug_interval
-
-def get_iam_user_id():
-    return config.iam_user_id
