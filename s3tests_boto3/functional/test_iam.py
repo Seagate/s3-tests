@@ -1803,12 +1803,12 @@ def test_copy_object_allow_get_src_put_dest():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
-def test_allow_deny_get_bucket_versioning_iam_policy():
+def test_allow_deny_get_bucket_versioning_iam_policy_self():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
-    bucket = get_new_bucket(client=s3_client_iam, name="iam1buk1")
+    bucket = get_new_bucket(client=s3_client_iam)
     s3_client_iam.put_object(Bucket=bucket, Key='iam1buk1obj1', Body='bar')
-    # Perform Get Bucket versioning operation on  “iam1buk1”
+    # Perform Get Bucket versioning operation on  "iam1buk1"
     response = s3_client_iam.get_bucket_versioning(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
@@ -1826,13 +1826,13 @@ def test_allow_deny_get_bucket_versioning_iam_policy():
                            PolicyName='deny_policy_versioning', UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    # Perform Get Bucket versioning operation on  “iam1buk1”
+    # Perform Get Bucket versioning operation on  "iam1buk1"
     response = s3_client_iam.get_bucket_versioning(Bucket=bucket)
     e = assert_raises(ClientError, s3_client_iam.get_bucket_versioning, Bucket=bucket)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
     eq(error_code, 'AccessDenied')
-    #Perform Put Bucket versioning on “iam1buk1”
+    #Perform Put Bucket versioning on  "iam1buk1"
     response = s3_client_iam.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Enabled"})
     # Allow Get Bucket Versioning API using IAM policy
@@ -1867,16 +1867,16 @@ def test_allow_deny_get_bucket_versioning_iam_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
-def test_allow_deny_get_bucket_versioning_iam_policy():
+def test_allow_deny_get_bucket_versioning_iam_policy_others():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
-    bucket = get_new_bucket(client=s3_client_iam, name="iam1buk1")
+    bucket = get_new_bucket(client=s3_client_iam)
     s3_client_iam.put_object(Bucket=bucket, Key='iam1buk1obj1', Body='bar')
-    # Create IAM user “iam2”
+    # Create IAM user "iam2"
     s3_client_alt = get_alt_client()
-    bucket2 = get_new_bucket(client=s3_client_alt, name="iam2buk1")
-    s3_client_alt.put_object(Bucket=bucket, Key='iam2buk1obj1', Body='foobar')
-    # Perform Get Bucket versioning operation on  “iam2buk1” ( IAM 2 login)
+    bucket2 = get_new_bucket(client=s3_client_alt)
+    s3_client_alt.put_object(Bucket=bucket2, Key='iam2buk1obj1', Body='foobar')
+    # Perform Get Bucket versioning operation on  "iam2buk1" ( IAM 2 login)
     response = s3_client_alt.get_bucket_versioning(Bucket=bucket2)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
@@ -1894,7 +1894,7 @@ def test_allow_deny_get_bucket_versioning_iam_policy():
                            PolicyName='deny_policy_versioning', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    # Perform Get Bucket versioning operation on  “iam2buk1” ( IAM 2 login)
+    # Perform Get Bucket versioning operation on  "iam2buk1" ( IAM 2 login)
     s3_client_alt.get_bucket_versioning(Bucket=bucket2)
     e = assert_raises(ClientError, s3_client_iam.get_bucket_versioning, Bucket=bucket2)
     status, error_code = _get_status_and_error_code(e.response)
@@ -1915,7 +1915,7 @@ def test_allow_deny_get_bucket_versioning_iam_policy():
                                       PolicyName='policy_get_versioning',
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    # Perform Get Bucket versioning operation on  “iam2buk1” (IAM 2 login)
+    # Perform Get Bucket versioning operation on  "iam2buk1" (IAM 2 login)
     response = s3_client_alt.get_bucket_versioning(Bucket=bucket2)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     _delete_all_objects(s3_client_iam, bucket)
@@ -1937,17 +1937,17 @@ def test_allow_deny_get_bucket_versioning_iam_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
-def test_allow_deny_put_bucket_versioning_iam_policy():
+def test_allow_deny_put_bucket_versioning_iam_policy_self():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
-    bucket = get_new_bucket(client=s3_client_iam, name="iam1buk1")
+    bucket = get_new_bucket(client=s3_client_iam)
     s3_client_iam.put_object(Bucket=bucket, Key='iam1buk1obj1', Body='bar')
-    # Perform Put Bucket Versioning operation on  “iam1buk1” with  “Enabled”
+    # Perform Put Bucket Versioning operation on  "iam1buk1" with  "Enabled"
     response = s3_client_iam.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    # Perform Get Bucket versioning on “iam1buk1”
+    # Perform Get Bucket versioning on "iam1buk1"
     response = s3_client_iam.get_bucket_versioning(Bucket=bucket)
     eq(response['Status'], 'Enabled')
     #Deny Put Bucket Versioning API using IAM policy
@@ -1964,7 +1964,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy():
                            PolicyName='deny_policy_versioning', UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    # Perform Put Bucket Versioning operation on  “iam1buk1” with  status = “Suspended”
+    # Perform Put Bucket Versioning operation on  "iam1buk1" with  status = "Suspended"
     response = s3_client_iam.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Suspended"})
     e = assert_raises(ClientError, s3_client_iam.put_bucket_versioning, Bucket=bucket)
@@ -1972,7 +1972,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy():
     eq(status, 403)
     eq(error_code, 'AccessDenied')
 
-    #Perform Get Bucket versioning on “iam1buk1”
+    #Perform Get Bucket versioning on "iam1buk1"
     response = s3_client_iam.get_bucket_versioning(Bucket=bucket)
     eq(response['Status'], 'Enabled')
 
@@ -1990,11 +1990,11 @@ def test_allow_deny_put_bucket_versioning_iam_policy():
                                       PolicyName='allow_policy_versioning',
                                       UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    #Perform Put Bucket Versioning operation on  “iam1buk1” with status = “Suspended”
+    #Perform Put Bucket Versioning operation on  "iam1buk1" with status = "Suspended"
     response = s3_client_iam.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Suspended"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    #Perform Get Bucket versioning on “iam1buk1”
+    #Perform Get Bucket versioning on "iam1buk1"
     response = s3_client_iam.get_bucket_versioning(Bucket=bucket)
     eq(response['Status'], 'Suspended')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -2015,35 +2015,41 @@ def test_allow_deny_put_bucket_versioning_iam_policy():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
-def test_allow_deny_put_bucket_versioning_iam_policy():
+def test_allow_deny_put_bucket_versioning_iam_policy_others():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
-    bucket = get_new_bucket(client=s3_client_iam, name="iam1buk1")
+    bucket = get_new_bucket(client=s3_client_iam)
     s3_client_iam.put_object(Bucket=bucket, Key='iam1buk1obj1', Body='bar')
-    # Create IAM user “iam2”
+    # Create IAM user "iam2"
     s3_client_alt = get_alt_client()
-    bucket2 = get_new_bucket(client=s3_client_alt, name="iam2buk1")
-    s3_client_alt.put_object(Bucket=bucket, Key='iam2buk1obj1', Body='foobar')
-    # Perform Put Bucket versioning operation on  “iam2buk1” ( IAM 2 login)
+    bucket2 = get_new_bucket(client=s3_client_alt)
+    s3_client_alt.put_object(Bucket=bucket2, Key='iam2buk1obj1', Body='foobar')
+    # Perform Put Bucket versioning operation on  "iam2buk1"( IAM 2 login)
     response = s3_client_alt.put_bucket_versioning(Bucket=bucket2,
                                                    VersioningConfiguration={"Status": "Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     # Deny Put Bucket Versioning API for iam2 using IAM policy (IAM 1 login)
     deny_put_versioning_policy = json.dumps(
-        {"Version": "2012-10-17",
-         "Statement": {
-             "Effect": "Deny",
-             "Action": ["s3:PutBucketVersioning"],
-             "Resource": f"arn:aws:s3:::{bucket2}"
-             }
-         }
-    )
+        {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Deny",
+                "Action": [
+                    "s3:GetBucketVersioning"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::iam1buk1"
+                ]
+            }
+        ]
+    })
     response = client.put_user_policy(PolicyDocument=deny_put_versioning_policy,
                            PolicyName='deny_policy_versioning', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    # Perform Put Bucket versioning operation on  “iam2buk1” ( IAM 2 login)
+    # Perform Put Bucket versioning operation on  "iam2buk1" ( IAM 2 login)
     s3_client_alt.put_bucket_versioning(Bucket=bucket2,
                                         VersioningConfiguration={"Status":"Suspended"})
     e = assert_raises(ClientError, s3_client_iam.get_bucket_versioning, Bucket=bucket2)
@@ -2065,7 +2071,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy():
                                       PolicyName='policy_get_versioning',
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    # Perform Put Bucket versioning operation on  “iam2buk1” (IAM 2 login)
+    # Perform Put Bucket versioning operation on  "iam2buk1" (IAM 2 login)
     response = s3_client_alt.put_bucket_versioning(Bucket=bucket2,
                                                    VersioningConfiguration={"Status":"Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
