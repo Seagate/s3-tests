@@ -2055,7 +2055,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy_others():
                                                    VersioningConfiguration={"Status": "Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    response = client.delete_user_policy(PolicyName='allow_policy_versioning',
+    response = client.delete_user_policy(PolicyName='policy_put_versioning',
                                          UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     response = s3_client_iam.get_bucket_versioning(Bucket=bucket2)
