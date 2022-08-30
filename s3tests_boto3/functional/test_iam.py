@@ -1888,7 +1888,7 @@ def test_allow_deny_get_bucket_versioning_iam_policy_others():
                                       PolicyName='deny_policy_versioning',
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    e = assert_raises(ClientError, s3_client_iam.get_bucket_versioning, Bucket=bucket2)
+    e = assert_raises(ClientError, s3_client_alt.get_bucket_versioning, Bucket=bucket2)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
     eq(error_code, 'AccessDenied')
