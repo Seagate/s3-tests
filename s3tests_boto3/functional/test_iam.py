@@ -1868,19 +1868,17 @@ def test_allow_deny_get_bucket_versioning_iam_policy_self():
 def test_allow_deny_get_bucket_versioning_iam_policy_others():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
-    bucket = get_new_bucket(client=s3_client_iam)
-    s3_client_iam.put_object(Bucket=bucket, Key='iam1buk1obj1', Body='bar')
     s3_client_alt = get_alt_client()
-    bucket2 = get_new_bucket(client=s3_client_alt)
-    s3_client_alt.put_object(Bucket=bucket2, Key='iam2buk1obj1', Body='foobar')
-    response = s3_client_alt.get_bucket_versioning(Bucket=bucket2)
+    bucket = get_new_bucket(client=s3_client_alt)
+    s3_client_alt.put_object(Bucket=bucket, Key='iam2buk1obj1', Body='foobar')
+    response = s3_client_alt.get_bucket_versioning(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     deny_get_versioning_policy = json.dumps(
         {"Version": "2012-10-17",
          "Statement": {
              "Effect": "Deny",
              "Action": ["s3:GetBucketVersioning"],
-             "Resource": f"arn:aws:s3:::{bucket2}"
+             "Resource": f"arn:aws:s3:::{bucket}"
          }
          }
     )
@@ -1888,7 +1886,7 @@ def test_allow_deny_get_bucket_versioning_iam_policy_others():
                                       PolicyName='deny_policy_versioning',
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    e = assert_raises(ClientError, s3_client_alt.get_bucket_versioning, Bucket=bucket2)
+    e = assert_raises(ClientError, s3_client_alt.get_bucket_versioning, Bucket=bucket)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
     eq(error_code, 'AccessDenied')
@@ -1901,7 +1899,7 @@ def test_allow_deny_get_bucket_versioning_iam_policy_others():
          "Statement": {
              "Effect": "Allow",
              "Action": ["s3:GetBucketVersioning"],
-             "Resource": f"arn:aws:s3:::{bucket2}"
+             "Resource": f"arn:aws:s3:::{bucket}"
          }
          }
     )
@@ -1909,17 +1907,14 @@ def test_allow_deny_get_bucket_versioning_iam_policy_others():
                                       PolicyName='policy_get_versioning',
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    response = s3_client_alt.get_bucket_versioning(Bucket=bucket2)
+    response = s3_client_alt.get_bucket_versioning(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     response = client.delete_user_policy(PolicyName='allow_policy_versioning',
                                          UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    _delete_all_objects(s3_client_iam, bucket)
-    response = s3_client_iam.delete_bucket(Bucket=bucket)
-    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    _delete_all_objects(s3_client_alt, bucket2)
-    response = s3_client_alt.delete_bucket(Bucket=bucket2)
+    _delete_all_objects(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
 
@@ -2000,12 +1995,10 @@ def test_allow_deny_put_bucket_versioning_iam_policy_self():
 def test_allow_deny_put_bucket_versioning_iam_policy_others():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
-    bucket = get_new_bucket(client=s3_client_iam)
-    s3_client_iam.put_object(Bucket=bucket, Key='iam1buk1obj1', Body='bar')
     s3_client_alt = get_alt_client()
-    bucket2 = get_new_bucket(client=s3_client_alt)
-    s3_client_alt.put_object(Bucket=bucket2, Key='iam2buk1obj1', Body='foobar')
-    response = s3_client_alt.put_bucket_versioning(Bucket=bucket2,
+    bucket = get_new_bucket(client=s3_client_alt)
+    s3_client_alt.put_object(Bucket=bucket, Key='iam2buk1obj1', Body='foobar')
+    response = s3_client_alt.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     deny_put_versioning_policy = json.dumps(
@@ -2014,12 +2007,8 @@ def test_allow_deny_put_bucket_versioning_iam_policy_others():
             "Statement": [
                 {
                     "Effect": "Deny",
-                    "Action": [
-                        "s3:PutBucketVersioning"
-                    ],
-                    "Resource": [
-                        "arn:aws:s3:::iam1buk1"
-                    ]
+                    "Action": ["s3:PutBucketVersioning"],
+                    "Resource": f"arn:aws:s3:::{bucket}"
                 }
             ]
         })
@@ -2028,7 +2017,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy_others():
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    e = assert_raises(ClientError, s3_client_alt.put_bucket_versioning, Bucket=bucket2,
+    e = assert_raises(ClientError, s3_client_alt.put_bucket_versioning, Bucket=bucket,
                       VersioningConfiguration={"Status": "Suspended"})
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
@@ -2043,7 +2032,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy_others():
          "Statement": {
              "Effect": "Allow",
              "Action": ["s3:PutBucketVersioning"],
-             "Resource": f"arn:aws:s3:::{bucket2}"
+             "Resource": f"arn:aws:s3:::{bucket}"
          }
          }
     )
@@ -2051,18 +2040,15 @@ def test_allow_deny_put_bucket_versioning_iam_policy_others():
                                       PolicyName='policy_put_versioning',
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    response = s3_client_alt.put_bucket_versioning(Bucket=bucket2,
+    response = s3_client_alt.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     response = client.delete_user_policy(PolicyName='policy_put_versioning',
                                          UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    response = s3_client_iam.get_bucket_versioning(Bucket=bucket2)
+    response = s3_client_iam.get_bucket_versioning(Bucket=bucket)
     eq(response['Status'], 'Enabled')
-    _delete_all_objects(s3_client_alt, bucket2)
-    response = s3_client_iam.delete_bucket(Bucket=bucket2)
-    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    _delete_all_objects(s3_client_iam, bucket)
+    _delete_all_objects(s3_client_alt, bucket)
     response = s3_client_iam.delete_bucket(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
