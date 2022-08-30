@@ -2028,7 +2028,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy_others():
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    e = assert_raises(ClientError, s3_client_iam.put_bucket_versioning, Bucket=bucket2,
+    e = assert_raises(ClientError, s3_client_alt.put_bucket_versioning, Bucket=bucket2,
                       VersioningConfiguration={"Status": "Suspended"})
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
