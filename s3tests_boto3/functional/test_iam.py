@@ -2214,7 +2214,7 @@ def test_allow_deny_delete_object_version_iam_policy_self():
     version_id_2 = response['Versions'][1]['VersionId']
     response = s3_client_iam.delete_object(Bucket=bucket, Key='iam1buk1obj1',
                                            VersionId=version_id_1)
-    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
     deny_delete_object_versioning_policy = json.dumps(
         {"Version": "2012-10-17",
          "Statement": {
@@ -2258,7 +2258,7 @@ def test_allow_deny_delete_object_version_iam_policy_self():
     eq(error_code, 'NoSuchKey')
     response = s3_client_iam.delete_object(Bucket=bucket, Key='iam1buk1obj1',
                                            VersionId=version_id_2)
-    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
     response = client.delete_user_policy(PolicyName='allow_policy_versioning',
                                          UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -2289,7 +2289,7 @@ def test_allow_deny_delete_object_version_iam_policy_others():
     version_id_2 = response['Versions'][1]['VersionId']
     response = s3_client_alt.delete_object(Bucket=bucket, Key='iam2buk1obj1',
                                            VersionId=version_id_1)
-    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
     deny_delete_obj_versioning_policy = json.dumps(
         {
             "Version": "2012-10-17",
