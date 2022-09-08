@@ -2053,6 +2053,7 @@ def test_allow_deny_put_bucket_versioning_iam_policy_others():
     response = s3_client_iam.delete_bucket(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
+
 @attr(resource='user-policy')
 @attr(method='s3 Actions')
 @attr(operation='Verify Allow and Deny Get Object Version API using IAM policy for self')
@@ -2135,7 +2136,7 @@ def test_allow_deny_get_object_version_iam_policy_others():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
     s3_client_alt = get_alt_client()
-    bucket= get_new_bucket(client=s3_client_alt)
+    bucket = get_new_bucket(client=s3_client_alt)
     response = s3_client_alt.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -2192,6 +2193,7 @@ def test_allow_deny_get_object_version_iam_policy_others():
     _delete_all_objects(s3_client_alt, bucket)
     response = s3_client_iam.delete_bucket(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
 
 @attr(resource='user-policy')
 @attr(method='s3 Actions')
@@ -2277,7 +2279,7 @@ def test_allow_deny_delete_object_version_iam_policy_others():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
     s3_client_alt = get_alt_client()
-    bucket= get_new_bucket(client=s3_client_alt)
+    bucket = get_new_bucket(client=s3_client_alt)
     response = s3_client_alt.put_bucket_versioning(Bucket=bucket,
                                                    VersioningConfiguration={"Status": "Enabled"})
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -2339,4 +2341,180 @@ def test_allow_deny_delete_object_version_iam_policy_others():
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     _delete_all_objects(s3_client_alt, bucket)
     response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Test Allow and Deny Put Object Version Tagging API using IAM policy for self')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_deny_put_object_version_tagging_iam_policy_self():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    obj_key = "iam1buk1obj1"
+
+    # Create bucket, enable versioning, upload object
+    bucket = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_bucket_versioning(Bucket=bucket,
+                                                   VersioningConfiguration={"Status": "Enabled"})
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.get_bucket_versioning(Bucket=bucket)
+    eq(response['Status'], 'Enabled')
+    version_ids = []
+    for _ in range(2):
+        response = s3_client_iam.put_object(Bucket=bucket, Key=obj_key, Body='bar')
+        eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+        version_ids.append(response['VersionId'])
+
+    # Add tags to version
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    response = s3_client_iam.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
+                                                VersionId=version_ids[0])
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key,
+                                                VersionId=version_ids[0])
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Apply Deny PutObjectVersionTagging policy
+    deny_put_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Deny",
+                "Action": "s3:PutObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=deny_put_version_tag_policy,
+                                      PolicyName='PutVersionTag', UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Try put_object_tagging with version, expect AccessDenied
+    for version_id in version_ids:
+        e = assert_raises(ClientError, s3_client_iam.put_object_tagging, Bucket=bucket,
+                          Key=obj_key, VersionId=version_id, Tagging=tags)
+        status, error_code = _get_status_and_error_code(e.response)
+        eq(status, 403)
+        eq(error_code, 'AccessDenied')
+
+    # Try put_object_tagging without version, should succeed
+    response = s3_client_iam.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Replace policy
+    allow_put_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": "s3:PutObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    # Set and Get object version tags
+    response = client.put_user_policy(PolicyDocument=allow_put_version_tag_policy,
+                                      PolicyName='PutVersionTag', UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
+                                                VersionId=version_ids[0])
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key,
+                                                VersionId=version_ids[0])
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Cleanup - Delete policies
+    response = client.delete_user_policy(PolicyName='PutVersionTag',
+                                         UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Test Allow and Deny Put Object Version Tagging API using IAM policy for others')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_deny_put_object_version_tagging_iam_policy_others():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    obj_key = "iam2buk1obj1"
+
+    # Create bucket, enable versioning, upload object
+    bucket = get_new_bucket(client=s3_client_alt)
+    response = s3_client_alt.put_bucket_versioning(Bucket=bucket,
+                                                   VersioningConfiguration={"Status": "Enabled"})
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.get_bucket_versioning(Bucket=bucket)
+    eq(response['Status'], 'Enabled')
+    response = s3_client_alt.put_object(Bucket=bucket, Key=obj_key, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    version_id = response['VersionId']
+
+    # Add tags to version
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    response = s3_client_alt.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
+                                                VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.get_object_tagging(Bucket=bucket, Key=obj_key,
+                                                VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Apply Deny PutObjectVersionTagging policy
+    deny_put_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Deny",
+                "Action": "s3:PutObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=deny_put_version_tag_policy,
+                                      PolicyName='PutVersionTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Try put_object_tagging with version, expect AccessDenied
+    e = assert_raises(ClientError, s3_client_alt.put_object_tagging, Bucket=bucket,
+                      Key=obj_key, VersionId=version_id, Tagging=tags)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    # Try put_object_tagging without version, should succeed
+    response = s3_client_alt.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Replace policy
+    allow_put_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": "s3:PutObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    # Set and Get object version tags
+    response = client.put_user_policy(PolicyDocument=allow_put_version_tag_policy,
+                                      PolicyName='PutVersionTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
+                                                VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Cleanup - Delete policies
+    response = client.delete_user_policy(PolicyName='PutVersionTag',
+                                         UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
