@@ -2328,13 +2328,12 @@ def test_allow_deny_delete_object_version_iam_policy_others():
                                       PolicyName='policy_put_versioning',
                                       UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    response = s3_client_alt.delete_object(Bucket=bucket, Key='iam2buk1obj1',
-                                           VersionId=version_id_2)
-    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
     response = s3_client_alt.get_object(Bucket=bucket, Key='iam2buk1obj1',
                                         VersionId=version_id_2)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-
+    response = s3_client_alt.delete_object(Bucket=bucket, Key='iam2buk1obj1',
+                                           VersionId=version_id_2)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
     response = client.delete_user_policy(PolicyName='policy_put_versioning',
                                          UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
