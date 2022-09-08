@@ -2200,7 +2200,7 @@ def test_allow_deny_get_object_version_iam_policy_others():
 @attr(assertion='succeeds')
 @attr('user-policy')
 @attr('test_of_iam')
-def test_allow_deny__object_version_iam_policy_self():
+def test_allow_deny_delete_object_version_iam_policy_self():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
     bucket = get_new_bucket(client=s3_client_iam)
