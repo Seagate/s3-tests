@@ -28,6 +28,15 @@ def _delete_all_objects(s3client, bucket_name):
         eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
 
 
+def _empty_versioned_bucket(s3client, bucket_name):
+    resp = s3client.list_object_versions(Bucket=bucket_name)
+    to_delete = resp.get("Versions", [])
+    to_delete.extend(resp.get("DeleteMarkers", []))
+    for version in to_delete:
+        s3client.delete_object(Bucket=bucket_name, Key=version["Key"],
+                               VersionId=version["VersionId"])
+
+
 @attr(resource='user-policy')
 @attr(method='put')
 @attr(operation='Verify Put User Policy')
@@ -2432,6 +2441,10 @@ def test_allow_deny_put_object_version_tagging_iam_policy_self():
     response = client.delete_user_policy(PolicyName='PutVersionTag',
                                          UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    # Cleanup bucket & objects
+    _empty_versioned_bucket(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
 
 
 @attr(resource='user-policy')
@@ -2518,3 +2531,7 @@ def test_allow_deny_put_object_version_tagging_iam_policy_others():
     response = client.delete_user_policy(PolicyName='PutVersionTag',
                                          UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    # Cleanup bucket & objects
+    _empty_versioned_bucket(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
