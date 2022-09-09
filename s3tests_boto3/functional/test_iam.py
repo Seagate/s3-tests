@@ -2616,6 +2616,10 @@ def test_allow_deny_get_object_version_tagging_iam_policy_self():
     response = client.delete_user_policy(PolicyName='GetVersionTag',
                                          UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    # Cleanup bucket & objects
+    _empty_versioned_bucket(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
 
 
 @attr(resource='user-policy')
@@ -2666,7 +2670,7 @@ def test_allow_deny_get_object_version_tagging_iam_policy_others():
                                       PolicyName='GetVersionTag', UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    # Try get_object_tagging with version, expect AccessDenied
+    # Try get_object_tagging with version, expect success
     response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
@@ -2683,3 +2687,8 @@ def test_allow_deny_get_object_version_tagging_iam_policy_others():
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
     eq(error_code, 'AccessDenied')
+
+    # Cleanup bucket & objects
+    _empty_versioned_bucket(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
