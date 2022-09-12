@@ -2781,7 +2781,7 @@ def test_allow_deny_delete_object_version_tagging_iam_policy_self():
     eq(response['TagSet'], tags['Tagset'])
 
     # Cleanup - Delete policies
-    response = client.delete_user_policy(PolicyName='GetVersionTag',
+    response = client.delete_user_policy(PolicyName='DeleteVersionTag',
                                          UserName=get_iam_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     # Cleanup bucket & objects
@@ -2835,7 +2835,7 @@ def test_allow_deny_delete_object_version_tagging_iam_policy_others():
         }
     )
     response = client.put_user_policy(PolicyDocument=deny_delete_version_tag_policy,
-                                      PolicyName='deleteVersionTag', UserName=get_iam_user_id())
+                                      PolicyName='deleteVersionTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     e = assert_raises(ClientError, s3_client_iam.delete_object_tagging, Bucket=bucket, Key=obj_key,
@@ -2860,14 +2860,14 @@ def test_allow_deny_delete_object_version_tagging_iam_policy_others():
         }
     )
     response = client.put_user_policy(PolicyDocument=allow_delete_version_tag_policy,
-                                      PolicyName='deleteVersionTag', UserName=get_iam_user_id())
+                                      PolicyName='deleteVersionTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     response = s3_client_alt.delete_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     # Cleanup Allow policy
-    response = client.delete_user_policy(PolicyName='GetVersionTag', UserName=get_iam_user_id())
+    response = client.delete_user_policy(PolicyName='DeleteVersionTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     tags = {"TagSet": []}
     response = s3_client_alt.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
