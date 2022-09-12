@@ -2692,3 +2692,188 @@ def test_allow_deny_get_object_version_tagging_iam_policy_others():
     _empty_versioned_bucket(s3_client_alt, bucket)
     response = s3_client_alt.delete_bucket(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow and Deny Delete Object Version Tagging API using IAM policy for self')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_deny_delete_object_version_tagging_iam_policy_self():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    obj_key = "iam1buk1obj1"
+
+    # Create bucket, enable versioning, upload object
+    bucket = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_bucket_versioning(Bucket=bucket,
+                                                   VersioningConfiguration={"Status": "Enabled"})
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.put_object(Bucket=bucket, Key=obj_key, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    version_id = response['VersionId']
+
+    # Add tags to version
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    response = s3_client_iam.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
+                                                VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Apply Deny DeleteObjectVersionTagging policy
+    deny_delete_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Deny",
+                "Action": "s3:DeleteObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=deny_delete_version_tag_policy,
+                                      PolicyName='DeleteVersionTag', UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    e = assert_raises(ClientError, s3_client_iam.delete_object_tagging, Bucket=bucket,
+                      Key=obj_key, VersionId=version_id)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+
+    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    response = s3_client_iam.delete_object_tagging(Bucket=bucket, Key=obj_key)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 20)
+
+    response = s3_client_iam.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
+                                                VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Replace policy
+    allow_delete_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": "s3:DeleteObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_delete_version_tag_policy,
+                                      PolicyName='DeleteVersionTag', UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_iam.delete_object_tagging(Bucket=bucket, Key=obj_key,
+                                                   VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    tags = {"TagSet": []}
+    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['Tagset'])
+
+    # Cleanup - Delete policies
+    response = client.delete_user_policy(PolicyName='GetVersionTag',
+                                         UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    # Cleanup bucket & objects
+    _empty_versioned_bucket(s3_client_iam, bucket)
+    response = s3_client_iam.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow and Deny Delete Object Version Tagging API using IAM policy for others')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_deny_delete_object_version_tagging_iam_policy_others():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    obj_key = "iam2buk1obj1"
+
+    # Create bucket, enable versioning, upload object
+    bucket = get_new_bucket(client=s3_client_alt)
+    response = s3_client_alt.put_bucket_versioning(Bucket=bucket,
+                                                   VersioningConfiguration={"Status": "Enabled"})
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.get_bucket_versioning(Bucket=bucket)
+    eq(response['Status'], 'Enabled')
+    response = s3_client_alt.put_object(Bucket=bucket, Key=obj_key, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    version_id = response['VersionId']
+
+    # Add tags to version
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    response = s3_client_alt.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
+                                                VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.get_object_tagging(Bucket=bucket, Key=obj_key,
+                                                VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Apply Deny DeleteObjectVersionTagging policy
+    deny_delete_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Deny",
+                "Action": "s3:DeleteObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=deny_delete_version_tag_policy,
+                                      PolicyName='deleteVersionTag', UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    e = assert_raises(ClientError, s3_client_iam.delete_object_tagging, Bucket=bucket, Key=obj_key,
+                      VersionId=version_id)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied') 
+
+    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+
+    # Apply Allow DeleteObjectVersionTagging policy
+    allow_delete_version_tag_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": "s3:DeleteObjectVersionTagging",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_delete_version_tag_policy,
+                                      PolicyName='deleteVersionTag', UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    response = s3_client_alt.delete_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Cleanup Allow policy
+    response = client.delete_user_policy(PolicyName='GetVersionTag', UserName=get_iam_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    tags = {"TagSet": []}
+    response = s3_client_alt.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+    # Cleanup bucket & objects
+    _empty_versioned_bucket(s3_client_alt, bucket)
+    response = s3_client_alt.delete_bucket(Bucket=bucket)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
