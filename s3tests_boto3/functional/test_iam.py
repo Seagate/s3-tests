@@ -2749,7 +2749,7 @@ def test_allow_deny_delete_object_version_tagging_iam_policy_self():
     eq(response['TagSet'], tags['TagSet'])
 
     response = s3_client_iam.delete_object_tagging(Bucket=bucket, Key=obj_key)
-    eq(response['ResponseMetadata']['HTTPStatusCode'], 20)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     response = s3_client_iam.put_object_tagging(Bucket=bucket, Key=obj_key, Tagging=tags,
                                                 VersionId=version_id)
@@ -2838,13 +2838,13 @@ def test_allow_deny_delete_object_version_tagging_iam_policy_others():
                                       PolicyName='deleteVersionTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    e = assert_raises(ClientError, s3_client_iam.delete_object_tagging, Bucket=bucket, Key=obj_key,
+    e = assert_raises(ClientError, s3_client_alt.delete_object_tagging, Bucket=bucket, Key=obj_key,
                       VersionId=version_id)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
     eq(error_code, 'AccessDenied') 
 
-    response = s3_client_iam.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
+    response = s3_client_alt.get_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
     eq(response['TagSet'], tags['TagSet'])
 
@@ -2860,7 +2860,7 @@ def test_allow_deny_delete_object_version_tagging_iam_policy_others():
         }
     )
     response = client.put_user_policy(PolicyDocument=allow_delete_version_tag_policy,
-                                      PolicyName='deleteVersionTag', UserName=get_alt_user_id())
+                                      PolicyName='DeleteVersionTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
     response = s3_client_alt.delete_object_tagging(Bucket=bucket, Key=obj_key, VersionId=version_id)
