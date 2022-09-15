@@ -2875,3 +2875,368 @@ def test_allow_deny_delete_object_version_tagging_iam_policy_others():
     _empty_versioned_bucket(s3_client_alt, bucket)
     response = s3_client_alt.delete_bucket(Bucket=bucket)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+#47415
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow PutObject, GetObject, GetObjectTagging with source object is without tags')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_copy_object_put_get_getobjtagging_empty_source_tags():
+    client = get_iam_client()
+    s3_client_iam = get_iam_s3client()
+    s3_client_alt = get_alt_client()
+    key_src = "iam1bukobj"
+    key_dest = "iam2bukobj"
+    # Create bucket, upload object for user1
+    bucket_src = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    bucket_dest = get_new_bucket(client=s3_client_alt)
+
+    # Apply Allow s3:GetObject, PutObject, GetObjectTagging on user1buck for user2
+    allow_get_put_get_tagging_policy = json.dumps(
+        {"Version": "2012-10-17",
+         "Statement": {
+             "Effect": "Allow",
+             "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectTagging"],
+             "Resource": f"arn:aws:s3:::{bucket_src}"
+         }
+         }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_get_put_get_tagging_policy,
+                                      PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    empty_tags = {'TagSet': []}
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest,
+                                         TaggingDirective='COPY')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
+                      CopySource=copy_source, TaggingDirective='REPLACE',Tagging=tags)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    response = s3_client_alt.get_object_tagging(Bucket=bucket_dest, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], empty_tags['TagSet'])
+    response = s3_client_alt.get_object_tagging(Bucket=bucket_src, Key=key_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], empty_tags['TagSet'])
+    # delete policies, buckets, objects
+    response = client.delete_user_policy(PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.delete_object(Bucket=bucket_dest, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_object(Bucket=bucket_src, Key=key_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+#47416
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow PutObject, GetObject, GetObjectTagging with source object tags')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_copy_object_put_get_getobjtagging_with_source_tags():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    s3_client_iam = get_iam_s3client()
+    key_src = "iam1bukobj"
+    key_dest = "iam2bukobj"
+    # Create bucket, upload object for user1
+    bucket_src = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    bucket_dest = get_new_bucket(client=s3_client_alt)
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    # Apply Allow s3:GetObject, PutObject, GetObjectTagging on user1buck for user2
+    allow_get_put_get_tagging_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectTagging"],
+                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_get_put_get_tagging_policy,
+                                      PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
+                      CopySource=copy_source, TaggingDirective='COPY')
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    tags_replace = {'TagSet': [{'Key': 'Hello1', 'Value': 'World1'}, ]}
+    e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
+                      CopySource=copy_source, TaggingDirective='REPLACE', Tagging=tags_replace)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
+                      CopySource=copy_source)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    # delete policies, buckets, objects
+    response = client.delete_user_policy(PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.delete_object(Bucket=bucket_dest, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_bucket(Bucket=bucket_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+#47417
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow PutObject, GetObject with source object is tags')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_copy_object_put_get_with_source_tags():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    s3_client_iam = get_iam_s3client()
+    key_src = "iam1bukobj"
+    key_dest = "iam2bukobj"
+    # Create bucket, upload object for user1
+    bucket_src = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    bucket_dest = get_new_bucket(client=s3_client_alt)
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Apply Allow s3:GetObject, PutObject, GetObjectTagging on user1buck for user2
+    allow_get_put_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": ["s3:PutObject", "s3:GetObject"],
+                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
+                                      PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
+                      copy_source=copy_source)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    response = s3_client_alt.get_object_tagging(Bucket=bucket_src, Key=key_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    eq(response['TagSet'], tags['TagSet'])
+    # delete policies, buckets, objects
+    response = client.delete_user_policy(PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.delete_object(Bucket=bucket_dest, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_object(Bucket=bucket_src, Key=key_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_bucket(Bucket=bucket_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+#47418
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow PutObject, GetObject, GetObjTagging, PutObjTagging with tags on src object')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_copy_object_put_get_putget_tagging_with_source_tags():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    s3_client_iam = get_iam_s3client()
+    key_src = "iam1bukobj"
+    key_dest = "iam2bukobj"
+    # Create bucket, upload object for user1
+    bucket_src = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    bucket_dest = get_new_bucket(client=s3_client_alt)
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+    response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Apply Allow s3:GetObject, PutObject, GetObjectTagging, PutObjectTagging on user1buck for user2
+    allow_get_put_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": ["s3:PutObject", "s3:GetObject", "s3:PutObjectTagging",
+                           "s3:GetObjectTagging"],
+                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
+                                      PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, Key=key_dest, CopySource=copy_source,
+                                         TaggingDirective='COPY')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    tags_replace = {'TagSet': [{'Key': 'Hello1', 'Value': 'World1'}, ]}
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest,
+                                         TaggingDirective='REPLACE', Tagging=tags_replace)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    # delete policies, buckets, objects
+    response = client.delete_user_policy(PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.delete_object(Bucket=bucket_dest, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_object(Bucket=bucket_src, Key=key_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_bucket(Bucket=bucket_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+#47419
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow PutObject, GetObject, PutObjTagging with no tags on src object')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_copy_object_put_get_without_source_tags():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    s3_client_iam = get_iam_s3client()
+    key_src = "iam1bukobj"
+    key_dest = "iam2bukobj"
+    # Create bucket, upload object for user1
+    bucket_src = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    bucket_dest = get_new_bucket(client=s3_client_alt)
+    tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
+
+    # Apply Allow s3:GetObject, PutObject, GetObjectTagging, PutObjectTagging on user1buck for user2
+    allow_get_put_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": ["s3:PutObject", "s3:GetObject", "s3:PutObjectTagging"],
+                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
+                                      PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest,
+                                         TaggingDirective='COPY')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest,
+                                         TaggingDirective='REPLACE', Tagging=tags)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    # delete policies, buckets, objects
+    response = client.delete_user_policy(PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.delete_object(Bucket=bucket_dest, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_object(Bucket=bucket_src, Key=key_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_bucket(Bucket=bucket_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
+#47420
+@attr(resource='user-policy')
+@attr(method='s3 Actions')
+@attr(operation='Allow PutObject, GetObject, PutObjTagging with tags on src object')
+@attr(assertion='succeeds')
+@attr('user-policy')
+@attr('test_of_iam')
+def test_allow_copy_object_put_get_put_tagging_with_source_tags():
+    client = get_iam_client()
+    s3_client_alt = get_alt_client()
+    s3_client_iam = get_iam_s3client()
+    key_src = "iam1bukobj"
+    key_dest = "iam2bukobj"
+    # Create bucket, upload object for user1
+    bucket_src = get_new_bucket(client=s3_client_iam)
+    response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    bucket_dest = get_new_bucket(client=s3_client_alt)
+    tags = {"TagSet": [{"Key": "Hello", "Value": "World"}]}
+
+    response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+
+    # Apply Allow s3:GetObject, PutObject, GetObjectTagging, PutObjectTagging on user1buck for user2
+    allow_get_put_policy = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Allow",
+                "Action": ["s3:PutObject", "s3:GetObject", "s3:PutObjectTagging"],
+                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+            }
+        }
+    )
+    response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
+                                      PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
+                      CopySource=copy_source, TaggingDirective='COPY')
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    tags_replace = {"TagSet": [{"Key": "Hello1", "Value": "World1"}]}
+
+    response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest,
+                                         TaggingDirective='REPLACE', Tagging=tags_replace)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
+                      CopySource=copy_source)
+    status, error_code = _get_status_and_error_code(e.response)
+    eq(status, 403)
+    eq(error_code, 'AccessDenied')
+    # delete policies, buckets, objects
+    response = client.delete_user_policy(PolicyName='AllowTag', UserName=get_alt_user_id())
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
+    response = s3_client_alt.delete_object(Bucket=bucket_dest, Key=key_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_object(Bucket=bucket_src, Key=key_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = client.delete_bucket(Bucket=bucket_src)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+    response = s3_client_alt.delete_bucket(Bucket=bucket_dest)
+    eq(response['ResponseMetadata']['HTTPStatusCode'], 204)
+
