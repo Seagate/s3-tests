@@ -2908,7 +2908,7 @@ def test_allow_copy_object_put_get_getobjtagging_empty_source_tags():
     response = client.put_user_policy(PolicyDocument=allow_get_put_get_tagging_policy,
                                       PolicyName='AllowTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    copy_source = {"Bucket": bucket_src, 'Key': key_src}
     tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
     empty_tags = {'TagSet': []}
     response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest,
@@ -2975,7 +2975,7 @@ def test_allow_copy_object_put_get_getobjtagging_with_source_tags():
     response = client.put_user_policy(PolicyDocument=allow_get_put_get_tagging_policy,
                                       PolicyName='AllowTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    copy_source = {"Bucket": bucket_src, 'Key': key_src}
     e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
                       CopySource=copy_source, TaggingDirective='COPY')
     status, error_code = _get_status_and_error_code(e.response)
@@ -3038,9 +3038,9 @@ def test_allow_copy_object_put_get_with_source_tags():
     response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
                                       PolicyName='AllowTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    copy_source = {"Bucket": bucket_src, 'Key': key_src}
     e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
-                      copy_source=copy_source)
+                      CopySource=copy_source)
     status, error_code = _get_status_and_error_code(e.response)
     eq(status, 403)
     eq(error_code, 'AccessDenied')
@@ -3096,12 +3096,12 @@ def test_allow_copy_object_put_get_putget_tagging_with_source_tags():
     response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
                                       PolicyName='AllowTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    copy_source = {"Bucket": bucket_src, 'Key': key_src}
     response = s3_client_alt.copy_object(Bucket=bucket_dest, Key=key_dest, CopySource=copy_source,
                                          TaggingDirective='COPY')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
 
-    tags_replace = {'TagSet': [{'Key': 'Hello1', 'Value': 'World1'}, ]}
+    tags_replace = {"TagSet": [{"Key": "Hello1", "Value": "World1"}, ]}
     response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest,
                                          TaggingDirective='REPLACE', Tagging=tags_replace)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -3153,7 +3153,7 @@ def test_allow_copy_object_put_get_without_source_tags():
     response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
                                       PolicyName='AllowTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    copy_source = {"Bucket": bucket_src, 'Key': key_src}
 
     response = s3_client_alt.copy_object(Bucket=bucket_dest, CopySource=copy_source, Key=key_dest)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -3212,7 +3212,7 @@ def test_allow_copy_object_put_get_put_tagging_with_source_tags():
     response = client.put_user_policy(PolicyDocument=allow_get_put_policy,
                                       PolicyName='AllowTag', UserName=get_alt_user_id())
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    copy_source = {"Bucket": bucket_src, 'Key': key_dest}
+    copy_source = {"Bucket": bucket_src, 'Key': key_src}
     e = assert_raises(ClientError, s3_client_alt.copy_object, Bucket=bucket_dest, Key=key_dest,
                       CopySource=copy_source, TaggingDirective='COPY')
     status, error_code = _get_status_and_error_code(e.response)
