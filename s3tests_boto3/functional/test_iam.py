@@ -2887,13 +2887,13 @@ def test_allow_copy_object_put_get_getobjtagging_empty_source_tags():
     client = get_iam_client()
     s3_client_iam = get_iam_s3client()
     s3_client_alt = get_alt_client()
-    key_src = "iam1bukobj"
+    key_src = "iam1buk1obj"
     key_dest = "iam2bukobj"
     # Create bucket, upload object for user1
     bucket_src = get_new_bucket(client=s3_client_iam)
     response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    bucket_dest = get_new_bucket(client=s3_client_alt)
+    bucket_dest = get_new_bucket(client=s3_client_iam)
 
     # Apply Allow s3:GetObject, PutObject, GetObjectTagging on user1buck for user2
     allow_get_put_get_tagging_policy = json.dumps(
@@ -2901,7 +2901,7 @@ def test_allow_copy_object_put_get_getobjtagging_empty_source_tags():
          "Statement": {
              "Effect": "Allow",
              "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectTagging"],
-             "Resource": f"arn:aws:s3:::{bucket_src}"
+             "Resource": f"arn:aws:s3:::*"
          }
          }
     )
@@ -2957,7 +2957,7 @@ def test_allow_copy_object_put_get_getobjtagging_with_source_tags():
     bucket_src = get_new_bucket(client=s3_client_iam)
     response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    bucket_dest = get_new_bucket(client=s3_client_alt)
+    bucket_dest = get_new_bucket(client=s3_client_iam)
     tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
     response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -2968,7 +2968,7 @@ def test_allow_copy_object_put_get_getobjtagging_with_source_tags():
             "Statement": {
                 "Effect": "Allow",
                 "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectTagging"],
-                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+                "Resource": f"arn:aws:s3:::*"
             }
         }
     )
@@ -3019,7 +3019,7 @@ def test_allow_copy_object_put_get_with_source_tags():
     bucket_src = get_new_bucket(client=s3_client_iam)
     response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    bucket_dest = get_new_bucket(client=s3_client_alt)
+    bucket_dest = get_new_bucket(client=s3_client_iam)
     tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
     response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -3031,7 +3031,7 @@ def test_allow_copy_object_put_get_with_source_tags():
             "Statement": {
                 "Effect": "Allow",
                 "Action": ["s3:PutObject", "s3:GetObject"],
-                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+                "Resource": f"arn:aws:s3:::*"
             }
         }
     )
@@ -3076,7 +3076,7 @@ def test_allow_copy_object_put_get_putget_tagging_with_source_tags():
     bucket_src = get_new_bucket(client=s3_client_iam)
     response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    bucket_dest = get_new_bucket(client=s3_client_alt)
+    bucket_dest = get_new_bucket(client=s3_client_iam)
     tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
     response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
@@ -3089,7 +3089,7 @@ def test_allow_copy_object_put_get_putget_tagging_with_source_tags():
                 "Effect": "Allow",
                 "Action": ["s3:PutObject", "s3:GetObject", "s3:PutObjectTagging",
                            "s3:GetObjectTagging"],
-                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+                "Resource": f"arn:aws:s3:::*"
             }
         }
     )
@@ -3136,7 +3136,7 @@ def test_allow_copy_object_put_get_without_source_tags():
     bucket_src = get_new_bucket(client=s3_client_iam)
     response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    bucket_dest = get_new_bucket(client=s3_client_alt)
+    bucket_dest = get_new_bucket(client=s3_client_iam)
     tags = {'TagSet': [{'Key': 'Hello', 'Value': 'World'}, ]}
 
     # Apply Allow s3:GetObject, PutObject, GetObjectTagging, PutObjectTagging on user1buck for user2
@@ -3146,7 +3146,7 @@ def test_allow_copy_object_put_get_without_source_tags():
             "Statement": {
                 "Effect": "Allow",
                 "Action": ["s3:PutObject", "s3:GetObject", "s3:PutObjectTagging"],
-                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+                "Resource": f"arn:aws:s3:::*"
             }
         }
     )
@@ -3192,7 +3192,7 @@ def test_allow_copy_object_put_get_put_tagging_with_source_tags():
     bucket_src = get_new_bucket(client=s3_client_iam)
     response = s3_client_iam.put_object(Bucket=bucket_src, Key=key_src, Body='bar')
     eq(response['ResponseMetadata']['HTTPStatusCode'], 200)
-    bucket_dest = get_new_bucket(client=s3_client_alt)
+    bucket_dest = get_new_bucket(client=s3_client_iam)
     tags = {"TagSet": [{"Key": "Hello", "Value": "World"}]}
 
     response = s3_client_iam.put_object_tagging(Bucket=bucket_src, Key=key_src, Tagging=tags)
@@ -3205,7 +3205,7 @@ def test_allow_copy_object_put_get_put_tagging_with_source_tags():
             "Statement": {
                 "Effect": "Allow",
                 "Action": ["s3:PutObject", "s3:GetObject", "s3:PutObjectTagging"],
-                "Resource": f"arn:aws:s3:::{bucket_src}/*"
+                "Resource": f"arn:aws:s3:::*"
             }
         }
     )
